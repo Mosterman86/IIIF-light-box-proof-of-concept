@@ -1,0 +1,1 @@
+# IIIF-light-box-proof-of-concept
