@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lightbox IIIF Builder — The Wolfsonian</title>
+
+<script src="https://cdn.jsdelivr.net/npm/openseadragon@4.1.0/build/openseadragon/openseadragon.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@200;300;400;500&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+:root {
+  --bg:     #000;
+  --fg:     #fff;
+  --muted:  #888;
+  --dim:    #444;
+  --rule:   rgba(255,255,255,0.12);
+  --vbg:    #0d0d0d;
+  --accent: rgba(255,255,255,0.08);
+  --sans:   'Plus Jakarta Sans', sans-serif;
+  --mono:   'DM Mono', monospace;
+  --gap:    clamp(1.5rem, 5vw, 4rem);
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: clamp(0.9rem, 1.4vw, 1rem);
+  line-height: 1.75;
+  overflow-x: hidden;
+}
+
+/* ── Header ── */
+.site-header {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(0,0,0,0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--rule);
+  padding: 0.8rem var(--gap);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem;
+}
+.header-name {
+  font-family: var(--mono); font-size: 0.62rem;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--fg); text-decoration: none;
+  white-space: nowrap;
+}
+.header-right {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+}
+.header-badge {
+  font-family: var(--mono); font-size: 0.58rem;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted); border: 1px solid var(--rule);
+  padding: 0.2em 0.6em; border-radius: 2px;
+}
+
+/* Mode toggle */
+.mode-toggle {
+  display: flex; align-items: center; gap: 0;
+  border: 1px solid var(--rule); border-radius: 3px; overflow: hidden;
+}
+.mode-btn {
+  font-family: var(--mono); font-size: 0.55rem;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  background: transparent; color: var(--muted);
+  border: none; padding: 0.35em 0.8em;
+  cursor: pointer; transition: background 0.15s, color 0.15s;
+  border-right: 1px solid var(--rule);
+}
+.mode-btn:last-child { border-right: none; }
+.mode-btn.active {
+  background: rgba(255,255,255,0.1);
+  color: var(--fg);
+}
+.mode-btn:hover:not(.active) { background: rgba(255,255,255,0.04); color: #bbb; }
+
+/* Share button */
+.share-btn {
+  font-family: var(--mono); font-size: 0.55rem;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  background: var(--fg); color: var(--bg);
+  border: none; padding: 0.4em 1em;
+  border-radius: 3px; cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+.share-btn:hover { opacity: 0.85; }
+
+/* Share toast */
+.share-toast {
+  position: fixed; bottom: 2rem; left: 50%;
+  transform: translateX(-50%) translateY(2rem);
+  background: var(--fg); color: var(--bg);
+  font-family: var(--mono); font-size: 0.6rem;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 0.65em 1.4em; border-radius: 3px;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s;
+  z-index: 200; white-space: nowrap;
+}
+.share-toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ── Hero ── */
+.hero {
+  padding: clamp(3rem,7vh,6rem) var(--gap) clamp(2rem,4vh,3.5rem);
+  max-width: 1200px; margin: 0 auto;
+  border-bottom: 1px solid var(--rule);
+}
+.hero-eyebrow {
+  font-family: var(--mono); font-size: 0.62rem;
+  letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 1.25rem;
+  display: flex; align-items: center; gap: 0.75rem;
+}
+.hero-eyebrow::before {
+  content: ''; display: block; width: 28px; height: 1px; background: var(--muted);
+}
+.hero-title {
+  font-size: clamp(2.4rem,6vw,5rem); font-weight: 200;
+  letter-spacing: -0.03em; line-height: 1.05; margin-bottom: 1rem;
+}
+.hero-sub {
+  font-size: clamp(0.88rem,1.8vw,1.05rem); font-weight: 300;
+  color: var(--muted); max-width: 600px;
+}
+
+/* ── Body ── */
+.body-wrap { max-width: 1200px; margin: 0 auto; padding: 0 var(--gap); }
+
+/* ── Section ── */
+.lb-section {
+  padding: clamp(2.5rem,5vh,4rem) 0;
+  border-bottom: 1px solid var(--rule);
+}
+.section-header {
+  display: flex; align-items: baseline; gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.section-tag {
+  font-family: var(--mono); font-size: 0.58rem;
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--dim);
+  display: flex; align-items: center; gap: 0.5rem;
+  flex-shrink: 0;
+}
+.section-tag::before {
+  content: attr(data-n);
+  width: 1.5em; height: 1.5em;
+  border: 1px solid var(--dim); border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.52rem;
+}
+
+/* Editable section title */
+.section-title-input {
+  font-size: clamp(1.25rem,2.8vw,1.9rem); font-weight: 300;
+  font-family: var(--sans);
+  letter-spacing: -0.02em; line-height: 1.2;
+  background: transparent; color: var(--fg);
+  border: none; border-bottom: 1px solid transparent;
+  outline: none; width: 100%;
+  transition: border-color 0.2s;
+  padding-bottom: 0.1em;
+}
+.section-title-input::placeholder { color: var(--dim); }
+.section-title-input:focus { border-bottom-color: var(--rule); }
+.build-mode .section-title-input:hover { border-bottom-color: var(--dim); }
+.view-mode .section-title-input { pointer-events: none; }
+
+/* ── Viewer grid — 2×2 ── */
+.vgrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+/* ── Viewer block ── */
+.vblock { display: flex; flex-direction: column; gap: 0; }
+
+/* Manifest input bar */
+.manifest-bar {
+  display: flex; align-items: stretch;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-bottom: none;
+  background: #080808;
+  overflow: hidden;
+  transition: opacity 0.2s;
+}
+.view-mode .manifest-bar { display: none; }
+.manifest-bar-label {
+  font-family: var(--mono); font-size: 0.5rem;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--dim); padding: 0 0.65rem;
+  display: flex; align-items: center;
+  border-right: 1px solid rgba(255,255,255,0.07);
+  white-space: nowrap; flex-shrink: 0;
+}
+.manifest-input {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--muted); font-family: var(--mono); font-size: 0.58rem;
+  padding: 0.5rem 0.5rem;
+  transition: color 0.15s;
+}
+.manifest-input::placeholder { color: var(--dim); }
+.manifest-input:focus { color: var(--fg); }
+.load-btn {
+  font-family: var(--mono); font-size: 0.5rem;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  background: rgba(255,255,255,0.06); color: var(--muted);
+  border: none; border-left: 1px solid rgba(255,255,255,0.07);
+  padding: 0 0.85rem; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.load-btn:hover { background: rgba(255,255,255,0.12); color: var(--fg); }
+
+/* Toolbar */
+.vtoolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.45rem 0.65rem;
+  background: #111; border: 1px solid rgba(255,255,255,0.07);
+  border-bottom: none;
+}
+.view-mode .vtoolbar { border-top: 1px solid rgba(255,255,255,0.07); }
+.vtoolbar-label {
+  font-family: var(--mono); font-size: 0.55rem;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim);
+  display: flex; align-items: center; gap: 0.4em;
+}
+.vtoolbar-label::before {
+  content: ''; width: 5px; height: 5px;
+  background: var(--dim); border-radius: 50%;
+  transition: background 0.3s;
+}
+.vtoolbar-label.loaded::before { background: #4caf50; }
+.vtoolbar-slot { font-family: var(--mono); font-size: 0.5rem; color: var(--dim); }
+
+/* OSD viewer */
+.osd-viewer {
+  width: 100%; height: 300px;
+  background: var(--vbg);
+  border: 1px solid rgba(255,255,255,0.07);
+  position: relative;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+/* Status overlay */
+.vstatus {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 0.75rem;
+  background: var(--vbg); z-index: 5;
+}
+.vstatus.hidden { display: none; }
+.vstatus-text {
+  font-family: var(--mono); font-size: 0.58rem;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--dim); text-align: center; padding: 0 1rem;
+}
+.vstatus-idle { font-size: 1.8rem; color: var(--dim); line-height: 1; margin-bottom: 0.25rem; }
+.vstatus-link {
+  font-family: var(--mono); font-size: 0.5rem;
+  color: var(--muted); text-decoration: underline; margin-top: 0.25rem;
+}
+
+/* Spinner */
+.spinner {
+  width: 20px; height: 20px;
+  border: 1.5px solid rgba(255,255,255,0.1);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* OSD controls */
+.viewer-wrapper { position: relative; }
+.osd-controls {
+  position: absolute; bottom: 0.5rem; right: 0.5rem;
+  display: flex; flex-direction: column; gap: 3px;
+  z-index: 20;
+}
+.osd-btn {
+  width: 26px; height: 26px;
+  background: rgba(0,0,0,0.7); color: var(--fg);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 3px; font-family: var(--mono);
+  font-size: 0.8rem; cursor: pointer; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.osd-btn:hover { background: rgba(255,255,255,0.15); }
+.osd-btn--home { font-size: 0.7rem; letter-spacing: -0.02em; }
+.osd-btn--fs   { font-size: 0.75rem; margin-top: 4px; border-color: rgba(255,255,255,0.2); }
+
+/* CSS-simulated fullscreen for iOS */
+.viewer-wrapper.is-fullscreen {
+  position: fixed !important; inset: 0 !important;
+  width: 100vw !important; height: 100vh !important;
+  z-index: 9998 !important; background: #000;
+}
+.viewer-wrapper.is-fullscreen .osd-viewer {
+  width: 100% !important; height: 100% !important;
+}
+
+/* Exit fullscreen button */
+.fs-exit-btn {
+  display: none; position: absolute;
+  top: 0.75rem; left: 0.75rem; z-index: 9999;
+  background: rgba(0,0,0,0.85); color: #fff;
+  border: 1px solid rgba(255,255,255,0.35); border-radius: 4px;
+  padding: 0.6em 1.1em; font-family: var(--mono);
+  font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.fs-exit-btn:hover { background: rgba(255,255,255,0.2); }
+.viewer-wrapper.is-fullscreen .fs-exit-btn { display: block; }
+div:fullscreen          .fs-exit-btn { display: block; }
+div:-webkit-full-screen .fs-exit-btn { display: block; }
+div:-moz-full-screen    .fs-exit-btn { display: block; }
+div:fullscreen          .osd-viewer  { width: 100vw !important; height: 100vh !important; }
+div:-webkit-full-screen .osd-viewer  { width: 100vw !important; height: 100vh !important; }
+div:-moz-full-screen    .osd-viewer  { width: 100vw !important; height: 100vh !important; }
+
+/* Section description textarea */
+.section-desc-textarea {
+  width: 100%; max-width: 720px;
+  background: transparent;
+  border: none; border-bottom: 1px solid transparent;
+  outline: none; resize: none;
+  color: #aaa; font-family: var(--sans);
+  font-size: 0.97rem; font-weight: 300;
+  line-height: 1.85; padding-bottom: 0.25em;
+  margin-bottom: 1.75rem;
+  transition: border-color 0.2s;
+  overflow: hidden; min-height: 2em;
+}
+.section-desc-textarea::placeholder { color: var(--dim); }
+.section-desc-textarea:focus { border-bottom-color: var(--rule); }
+.build-mode .section-desc-textarea:hover { border-bottom-color: var(--dim); }
+.view-mode .section-desc-textarea {
+  pointer-events: none;
+  color: #aaa;
+}
+/* Hide empty description in view mode */
+.view-mode .section-desc-textarea:placeholder-shown { display: none; }
+.site-footer {
+  max-width: 1200px; margin: 0 auto;
+  padding: clamp(2.5rem,5vh,4rem) var(--gap) clamp(3rem,6vh,5rem);
+  display: grid; grid-template-columns: 1fr 1fr; gap: 3rem;
+  border-top: 1px solid var(--rule);
+}
+.ft-label {
+  font-family: var(--mono); font-size: 0.55rem;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--dim); margin-bottom: 0.75rem;
+}
+.ft-body { font-size: 0.88rem; color: var(--muted); line-height: 1.8; }
+.ft-body a { color: var(--muted); text-decoration: underline; }
+.ft-body code {
+  font-family: var(--mono); font-size: 0.8rem;
+  background: rgba(255,255,255,0.06); padding: 0.15em 0.4em;
+  border-radius: 2px; color: #aaa;
+}
+.iiif-badge {
+  display: inline-block; margin-top: 1rem;
+  font-family: var(--mono); font-size: 0.55rem;
+  letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--muted); text-decoration: none;
+  border: 1px solid var(--rule); padding: 0.3em 0.75em;
+  border-radius: 2px; transition: border-color 0.2s;
+}
+.iiif-badge:hover { border-color: var(--muted); }
+
+/* ── Responsive ── */
+@media (max-width: 800px) {
+  .vgrid { grid-template-columns: 1fr; }
+  .osd-viewer { height: 270px; }
+  .site-footer { grid-template-columns: 1fr; gap: 2rem; }
+}
+@media (max-width: 540px) {
+  .osd-viewer { height: 230px; }
+  .site-header { padding: 0.65rem 1rem; }
+  .header-badge { display: none; }
+  .hero { padding: 2.5rem 1rem 2rem; }
+  .body-wrap { padding: 0 1rem; }
+  .site-footer { padding: 2rem 1rem 3rem; }
+  .hero-title { font-size: 2.2rem; }
+}
+@media (hover: none) and (pointer: coarse) {
+  .load-btn { padding: 0 1rem; }
+  .osd-btn { width: 32px; height: 32px; }
+}
+
+/* View mode — hide build chrome */
+.view-mode .build-only { display: none !important; }
+.build-mode .view-only { display: none !important; }
+</style>
+</head>
+<body class="build-mode">
+
+<!-- ── Header ── -->
+<header class="site-header">
+  <a class="header-name" href="https://www.wolfsonian.org" target="_blank">The Wolfsonian&ndash;FIU</a>
+  <div class="header-right">
+    <span class="header-badge build-only">Builder Mode</span>
+    <span class="header-badge view-only">View Mode</span>
+    <div class="mode-toggle build-only" id="modeToggle" title="Switch between builder and view mode">
+      <button class="mode-btn active" data-mode="build" onclick="setMode('build')">Build</button>
+      <button class="mode-btn" data-mode="view" onclick="setMode('view')">View</button>
+    </div>
+    <button class="share-btn" id="shareBtn" onclick="shareLight()">&#8599; Share Lightbox</button>
+  </div>
+</header>
+
+<!-- ── Hero ── -->
+<div class="hero">
+  <div class="hero-eyebrow">Wolfsonian Digital Labs &mdash; IIIF Tool</div>
+  <div style="font-family:var(--mono);font-size:0.58rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--dim);margin-bottom:2rem;padding-left:calc(28px + 0.75rem);">Proof of Concept</div>
+  <h1 class="hero-title">Lightbox<br>IIIF Builder</h1>
+  <p class="hero-sub build-only">
+    Paste a IIIF manifest URL into any slot to load an image. Name your sections, fill your lightbox,
+    then share it with a single link.
+  </p>
+  <p class="hero-sub view-only">
+    A curated IIIF lightbox. Use the zoom and fullscreen controls on each image to explore.
+  </p>
+</div>
+
+<!-- ── About & How to Share ── -->
+<div class="body-wrap">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2.5rem;padding:clamp(2rem,4vh,3rem) 0;border-bottom:1px solid var(--rule);">
+    <div>
+      <div style="font-family:var(--mono);font-size:0.55rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--dim);margin-bottom:0.65rem;">About this tool</div>
+      <div style="font-size:0.88rem;color:var(--muted);line-height:1.8;">
+        The Lightbox IIIF Builder lets curators and educators quickly assemble
+        a visual workspace from any <a href="https://iiif.io" target="_blank" style="color:var(--muted);text-decoration:underline;">IIIF-compliant</a>
+        collection. Paste manifest URLs into the slots, name your sections, then
+        share the result as a single URL &mdash; no accounts, no uploads, no server required.
+        Images are loaded directly from their source institutions via
+        <a href="https://openseadragon.github.io" target="_blank" style="color:var(--muted);text-decoration:underline;">OpenSeadragon 4.1</a>
+        and the IIIF Presentation API (v2 &amp; v3).
+      </div>
+    </div>
+    <div>
+      <div style="font-family:var(--mono);font-size:0.55rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--dim);margin-bottom:0.65rem;">How to share</div>
+      <div style="font-size:0.88rem;color:var(--muted);line-height:1.8;">
+        Click <strong style="color:#fff;font-weight:400;">&#8599; Share Lightbox</strong> to copy a
+        URL to your clipboard. The URL encodes all your manifest URLs and section titles &mdash;
+        anyone who opens it will see the same lightbox in View Mode, ready to explore.
+        Recipients can switch to Build Mode using the toggle in the header to edit or remix
+        the lightbox further.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Sections ── -->
+<div class="body-wrap" id="sectionsWrap">
+  <!-- Generated by JS -->
+</div>
+
+<!-- ── Footer ── -->
+<footer class="site-footer">
+  <div>
+    <a class="iiif-badge" href="https://iiif.io" target="_blank">&#10022; IIIF Compliant</a>
+  </div>
+</footer>
+
+<div class="share-toast" id="shareToast">Link copied to clipboard</div>
+
+<script>
+(function () {
+"use strict";
+
+/* ── Config ── */
+var NUM_SECTIONS = 4;
+var NUM_PER_SECTION = 4;
+var DEFAULT_SECTION_TITLES = [
+  "Section One", "Section Two", "Section Three", "Section Four"
+];
+
+/* ── State ── */
+var state = {
+  sections: []
+};
+for (var s = 0; s < NUM_SECTIONS; s++) {
+  var manifests = [];
+  for (var v = 0; v < NUM_PER_SECTION; v++) { manifests.push(""); }
+  state.sections.push({ title: DEFAULT_SECTION_TITLES[s], description: "", manifests: manifests });
+}
+
+/* ── OSD helpers (from exhibition framework) ── */
+function getTileSource(manifest) {
+  var isV2 = false;
+  var ctx = manifest["@context"] || "";
+  if (typeof ctx === "string") {
+    isV2 = ctx.indexOf("presentation/2") !== -1;
+  } else if (Array.isArray(ctx)) {
+    for (var i = 0; i < ctx.length; i++) {
+      if (typeof ctx[i] === "string" && ctx[i].indexOf("presentation/2") !== -1) {
+        isV2 = true; break;
+      }
+    }
+  }
+  if (manifest["@type"] === "sc:Manifest") { isV2 = true; }
+
+  if (isV2) {
+    var seqs = manifest.sequences;
+    if (!seqs || !seqs[0] || !seqs[0].canvases || !seqs[0].canvases[0]) { return null; }
+    var imgs = seqs[0].canvases[0].images;
+    if (!imgs || !imgs[0] || !imgs[0].resource) { return null; }
+    var res = imgs[0].resource;
+    var svc = res.service;
+    if (svc) {
+      var sid = svc["@id"] || svc.id;
+      if (!sid && Array.isArray(svc) && svc[0]) { sid = svc[0]["@id"] || svc[0].id; }
+      if (sid) { return sid.replace(/\/$/, "") + "/info.json"; }
+    }
+    var rid = res["@id"] || res.id;
+    if (rid) { return rid; }
+    return null;
+  }
+
+  var items = manifest.items;
+  if (!items || !items[0]) { return null; }
+  var canvasItems = items[0].items;
+  if (!canvasItems || !canvasItems[0]) { return null; }
+  var annItems = canvasItems[0].items;
+  if (!annItems || !annItems[0]) { return null; }
+  var body = annItems[0].body;
+  if (!body) { return null; }
+  var services = body.service;
+  if (services) {
+    if (!Array.isArray(services)) { services = [services]; }
+    var s0 = services[0];
+    if (s0) {
+      var s0id = s0.id || s0["@id"];
+      if (s0id) { return s0id.replace(/\/$/, "") + "/info.json"; }
+    }
+  }
+  var bid = body.id || body["@id"];
+  if (bid) { return bid; }
+  return null;
+}
+
+/* ── Viewer init ── */
+function initViewer(el, manifestUrl) {
+  var statusEl = el.querySelector(".vstatus");
+  var toolbarLabel = el.closest(".vblock").querySelector(".vtoolbar-label");
+
+  // Clear any previous OSD instance
+  el.innerHTML = "";
+  if (statusEl) {
+    statusEl = null;
+  }
+  // Recreate status overlay
+  var vstatus = document.createElement("div");
+  vstatus.className = "vstatus";
+  vstatus.innerHTML = manifestUrl
+    ? '<div class="spinner"></div><div class="vstatus-text">Loading&hellip;</div>'
+    : '<div class="vstatus-idle">&#9633;</div><div class="vstatus-text">Paste a manifest URL above</div>';
+  el.appendChild(vstatus);
+
+  if (!manifestUrl) {
+    if (toolbarLabel) { toolbarLabel.classList.remove("loaded"); }
+    return;
+  }
+
+  // Inject controls if not already present
+  var wrapper = el.closest(".viewer-wrapper");
+  if (!wrapper) {
+    wrapper = document.createElement("div");
+    wrapper.className = "viewer-wrapper";
+    el.parentNode.insertBefore(wrapper, el);
+    wrapper.appendChild(el);
+    buildControls(wrapper, el);
+  }
+
+  fetch(manifestUrl)
+    .then(function (r) {
+      if (!r.ok) { throw new Error("HTTP " + r.status); }
+      return r.json();
+    })
+    .then(function (manifest) {
+      var tileSource = getTileSource(manifest);
+      if (!tileSource) { throw new Error("No image source found in manifest"); }
+      vstatus.classList.add("hidden");
+      if (toolbarLabel) { toolbarLabel.classList.add("loaded"); }
+
+      var osd = OpenSeadragon({
+        element: el,
+        tileSources: [tileSource],
+        showNavigationControl: false,
+        showFullPageControl: false,
+        showRotationControl: false,
+        defaultZoomLevel: 0,
+        visibilityRatio: 0.8
+      });
+
+      // Re-fetch control buttons from wrapper
+      var btnZoomIn  = wrapper.querySelector(".osd-btn--zoomin");
+      var btnZoomOut = wrapper.querySelector(".osd-btn--zoomout");
+      var btnHome    = wrapper.querySelector(".osd-btn--home");
+
+      osd.addHandler("open", function () {
+        if (btnZoomIn) {
+          btnZoomIn.onclick = function (e) { e.stopPropagation(); osd.viewport.zoomBy(1.5); osd.viewport.applyConstraints(); };
+        }
+        if (btnZoomOut) {
+          btnZoomOut.onclick = function (e) { e.stopPropagation(); osd.viewport.zoomBy(0.67); osd.viewport.applyConstraints(); };
+        }
+        if (btnHome) {
+          btnHome.onclick = function (e) { e.stopPropagation(); osd.viewport.goHome(); };
+        }
+      });
+    })
+    .catch(function (err) {
+      vstatus.classList.remove("hidden");
+      vstatus.querySelector(".spinner") && (vstatus.querySelector(".spinner").style.display = "none");
+      var msg = vstatus.querySelector(".vstatus-text");
+      if (msg) {
+        msg.textContent = window.location.protocol === "file:"
+          ? "Serve via localhost to load images"
+          : "Could not load manifest";
+      }
+      if (toolbarLabel) { toolbarLabel.classList.remove("loaded"); }
+    });
+}
+
+function buildControls(wrapper, el) {
+  var controls = document.createElement("div");
+  controls.className = "osd-controls";
+
+  var btnZoomIn  = document.createElement("button");
+  btnZoomIn.className = "osd-btn osd-btn--zoomin";
+  btnZoomIn.title = "Zoom in"; btnZoomIn.innerHTML = "&#43;";
+
+  var btnZoomOut = document.createElement("button");
+  btnZoomOut.className = "osd-btn osd-btn--zoomout";
+  btnZoomOut.title = "Zoom out"; btnZoomOut.innerHTML = "&#8722;";
+
+  var btnHome = document.createElement("button");
+  btnHome.className = "osd-btn osd-btn--home";
+  btnHome.title = "Reset view"; btnHome.innerHTML = "&#8962;";
+
+  var btnFS = document.createElement("button");
+  btnFS.className = "osd-btn osd-btn--fs";
+  btnFS.title = "Fullscreen"; btnFS.innerHTML = "&#x26F6;";
+  btnFS.addEventListener("click", function (e) {
+    e.stopPropagation();
+    var supportsFS = !!(document.documentElement.requestFullscreen ||
+                        document.documentElement.webkitRequestFullscreen);
+    if (supportsFS) {
+      if (wrapper.requestFullscreen) { wrapper.requestFullscreen(); }
+      else if (wrapper.webkitRequestFullscreen) { wrapper.webkitRequestFullscreen(); }
+    } else {
+      wrapper.classList.add("is-fullscreen");
+      document.body.style.overflow = "hidden";
+    }
+  });
+
+  controls.appendChild(btnZoomIn);
+  controls.appendChild(btnZoomOut);
+  controls.appendChild(btnHome);
+  controls.appendChild(btnFS);
+
+  var exitBtn = document.createElement("button");
+  exitBtn.className = "fs-exit-btn";
+  exitBtn.innerHTML = "&#10005; Exit fullscreen";
+  exitBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    wrapper.classList.remove("is-fullscreen");
+    document.body.style.overflow = "";
+    if (document.exitFullscreen) { document.exitFullscreen(); }
+    else if (document.webkitExitFullscreen) { document.webkitExitFullscreen(); }
+  });
+
+  wrapper.appendChild(exitBtn);
+  wrapper.appendChild(controls);
+}
+
+/* ── Build DOM ── */
+function buildSections() {
+  var wrap = document.getElementById("sectionsWrap");
+  wrap.innerHTML = "";
+
+  for (var si = 0; si < NUM_SECTIONS; si++) {
+    var sec = state.sections[si];
+    var sectionEl = document.createElement("section");
+    sectionEl.className = "lb-section";
+    sectionEl.dataset.sectionIndex = si;
+
+    // Section header
+    var header = document.createElement("div");
+    header.className = "section-header";
+
+    var tag = document.createElement("div");
+    tag.className = "section-tag";
+    tag.dataset.n = si + 1;
+    tag.textContent = "Section";
+
+    var titleInput = document.createElement("input");
+    titleInput.className = "section-title-input";
+    titleInput.type = "text";
+    titleInput.value = sec.title;
+    titleInput.placeholder = "Section title";
+    titleInput.dataset.sectionIndex = si;
+    titleInput.addEventListener("input", function (e) {
+      var idx = parseInt(e.target.dataset.sectionIndex);
+      state.sections[idx].title = e.target.value;
+    });
+
+    header.appendChild(tag);
+    header.appendChild(titleInput);
+    sectionEl.appendChild(header);
+
+    // Section description textarea
+    var descArea = document.createElement("textarea");
+    descArea.className = "section-desc-textarea";
+    descArea.placeholder = "Add a description for this section\u2026";
+    descArea.rows = 3;
+    descArea.value = sec.description || "";
+    descArea.dataset.sectionIndex = si;
+    descArea.addEventListener("input", (function(idx, el) {
+      return function () {
+        state.sections[idx].description = el.value;
+        // Auto-resize
+        el.style.height = "auto";
+        el.style.height = el.scrollHeight + "px";
+      };
+    })(si, descArea));
+    // Set initial height
+    setTimeout((function(el) {
+      return function() {
+        el.style.height = "auto";
+        el.style.height = el.scrollHeight + "px";
+      };
+    })(descArea), 0);
+    sectionEl.appendChild(descArea);
+    var grid = document.createElement("div");
+    grid.className = "vgrid";
+
+    for (var vi = 0; vi < NUM_PER_SECTION; vi++) {
+      grid.appendChild(buildViewerBlock(si, vi, sec.manifests[vi]));
+    }
+
+    sectionEl.appendChild(grid);
+    wrap.appendChild(sectionEl);
+  }
+}
+
+function buildViewerBlock(si, vi, manifestUrl) {
+  var vblock = document.createElement("div");
+  vblock.className = "vblock";
+
+  var slotNum = si * NUM_PER_SECTION + vi + 1;
+
+  // Manifest input bar
+  var bar = document.createElement("div");
+  bar.className = "manifest-bar build-only";
+
+  var barLabel = document.createElement("span");
+  barLabel.className = "manifest-bar-label";
+  barLabel.textContent = "Manifest URL";
+
+  var input = document.createElement("input");
+  input.className = "manifest-input";
+  input.type = "url";
+  input.placeholder = "https://example.org/manifest.json";
+  input.value = manifestUrl || "";
+  input.dataset.sectionIndex = si;
+  input.dataset.viewerIndex = vi;
+
+  var loadBtn = document.createElement("button");
+  loadBtn.className = "load-btn";
+  loadBtn.textContent = "Load";
+
+  var osdEl; // reference set below
+
+  function doLoad() {
+    var url = input.value.trim();
+    state.sections[si].manifests[vi] = url;
+    initViewer(osdEl, url);
+  }
+
+  loadBtn.addEventListener("click", doLoad);
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { doLoad(); }
+  });
+
+  bar.appendChild(barLabel);
+  bar.appendChild(input);
+  bar.appendChild(loadBtn);
+
+  // Toolbar
+  var toolbar = document.createElement("div");
+  toolbar.className = "vtoolbar";
+
+  var label = document.createElement("span");
+  label.className = "vtoolbar-label";
+  label.textContent = "IIIF Viewer";
+
+  var slot = document.createElement("span");
+  slot.className = "vtoolbar-slot";
+  slot.textContent = String(slotNum).padStart(2, "0");
+
+  toolbar.appendChild(label);
+  toolbar.appendChild(slot);
+
+  // OSD viewer
+  osdEl = document.createElement("div");
+  osdEl.className = "osd-viewer";
+  osdEl.id = "osd-" + si + "-" + vi;
+
+  var vstatus = document.createElement("div");
+  vstatus.className = "vstatus";
+  vstatus.innerHTML = '<div class="vstatus-idle">&#9633;</div><div class="vstatus-text">Paste a manifest URL above</div>';
+  osdEl.appendChild(vstatus);
+
+  vblock.appendChild(bar);
+  vblock.appendChild(toolbar);
+  vblock.appendChild(osdEl);
+  return vblock;
+}
+
+/* ── Mode switching ── */
+window.setMode = function (mode) {
+  document.body.className = mode === "view" ? "view-mode" : "build-mode";
+  document.querySelectorAll(".mode-btn").forEach(function (btn) {
+    btn.classList.toggle("active", btn.dataset.mode === mode);
+  });
+};
+
+/* ── Share / load URL state ── */
+window.shareLight = function () {
+  var payload = {
+    sections: state.sections.map(function (sec) {
+    return { title: sec.title, description: sec.description || "", manifests: sec.manifests.slice() };
+    })
+  };
+  var encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  var url = window.location.origin + window.location.pathname + "#lb=" + encoded;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(showToast);
+  } else {
+    var ta = document.createElement("textarea");
+    ta.value = url; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); document.body.removeChild(ta);
+    showToast();
+  }
+};
+
+function showToast() {
+  var toast = document.getElementById("shareToast");
+  toast.classList.add("visible");
+  setTimeout(function () { toast.classList.remove("visible"); }, 2500);
+}
+
+function loadFromHash() {
+  var hash = window.location.hash;
+  if (!hash || hash.indexOf("#lb=") !== 0) { return false; }
+  try {
+    var encoded = hash.slice(4);
+    var json = decodeURIComponent(escape(atob(encoded)));
+    var payload = JSON.parse(json);
+    if (!payload.sections || !Array.isArray(payload.sections)) { return false; }
+    for (var si = 0; si < NUM_SECTIONS; si++) {
+      if (!payload.sections[si]) { continue; }
+      if (payload.sections[si].title) {
+        state.sections[si].title = payload.sections[si].title;
+      }
+      if (payload.sections[si].description !== undefined) {
+        state.sections[si].description = payload.sections[si].description;
+      }
+      if (Array.isArray(payload.sections[si].manifests)) {
+        for (var vi = 0; vi < NUM_PER_SECTION; vi++) {
+          state.sections[si].manifests[vi] = payload.sections[si].manifests[vi] || "";
+        }
+      }
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/* ── Boot ── */
+function boot() {
+  var fromShare = loadFromHash();
+  buildSections();
+
+  // Load all populated manifests
+  for (var si = 0; si < NUM_SECTIONS; si++) {
+    for (var vi = 0; vi < NUM_PER_SECTION; vi++) {
+      var url = state.sections[si].manifests[vi];
+      if (url) {
+        var el = document.getElementById("osd-" + si + "-" + vi);
+        if (el) { initViewer(el, url); }
+      }
+    }
+  }
+
+  // Sync input values after rebuild (in case loadFromHash populated them)
+  if (fromShare) {
+    document.querySelectorAll(".manifest-input").forEach(function (input) {
+      var si = parseInt(input.dataset.sectionIndex);
+      var vi = parseInt(input.dataset.viewerIndex);
+      if (!isNaN(si) && !isNaN(vi)) {
+        input.value = state.sections[si].manifests[vi] || "";
+      }
+    });
+    document.querySelectorAll(".section-desc-textarea").forEach(function (ta) {
+      var si = parseInt(ta.dataset.sectionIndex);
+      if (!isNaN(si)) {
+        ta.value = state.sections[si].description || "";
+        ta.style.height = "auto";
+        ta.style.height = ta.scrollHeight + "px";
+      }
+    });
+    // Switch to view mode for recipients
+    window.setMode("view");
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", boot);
+} else {
+  boot();
+}
+
+}());
+</script>
+</body>
+</html>
